@@ -24,7 +24,6 @@ int rcsv_read(int *rows, int *cols, float **dest, const char *path) {
     if (buffer == NULL) {
         goto clean1;
     }
-    buffer[BUFFER_SIZE-1] = '\0';
 
     int bytes_left = 0;
 
