@@ -8,8 +8,8 @@
 #include <fcntl.h>
 #include "rcsv.h"
 
-#define BUFFER_SIZE (1 << 16)
-#define INIT_ALLOC (1 << 12)
+#define BUFFER_SIZE (1L << 16)
+#define INIT_ALLOC  (1L << 16)
 
 int rcsv_read(int *rows, int *cols, float **dest, const char *path) {
 
@@ -25,19 +25,22 @@ int rcsv_read(int *rows, int *cols, float **dest, const char *path) {
         goto clean1;
     }
 
-    int bytes_left = 0;
+    size_t bytes_left = 0;
 
     char *pleft = buffer + BUFFER_SIZE;
     char *pright = NULL;
 
     int need_reload = 1;
 
-    uint32_t rows_count = 0;
-    uint32_t elts_count = 0;
+    int rows_count = 0;
+    int elts_count = 0;
 
-    uint32_t data_capacity = INIT_ALLOC;
-    uint32_t data_size = 0;
+    size_t data_capacity = INIT_ALLOC;
+    size_t data_size = 0;
     float *data = (float*) malloc(sizeof(float) * data_capacity);
+    if (data == NULL) {
+        goto clean2;
+    }
 
     int nothing_left = 0;
     for (;;) {
@@ -108,7 +111,7 @@ int rcsv_read(int *rows, int *cols, float **dest, const char *path) {
 
             if (data_size + 1 > data_capacity) {
 
-                uint32_t new_data_capacity = data_capacity * 2;
+                size_t new_data_capacity = data_capacity * 2;
                 float *new_data = (float*) realloc(data, sizeof(float) * new_data_capacity);
                 if (new_data == NULL) {
                     goto clean3;
