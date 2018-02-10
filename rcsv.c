@@ -109,13 +109,10 @@ int rcsv_read(int *rows, int *cols, float **dest, const char *path) {
             if (data_size + 1 > data_capacity) {
 
                 uint32_t new_data_capacity = data_capacity * 2;
-                float *new_data = (float*) malloc(sizeof(float) * new_data_capacity);
+                float *new_data = (float*) realloc(data, sizeof(float) * new_data_capacity);
                 if (new_data == NULL) {
                     goto clean3;
                 }
-
-                memcpy(new_data, data, data_capacity * sizeof(float));
-                free(data);
 
                 data = new_data;
                 data_capacity = new_data_capacity;
