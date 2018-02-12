@@ -14,17 +14,10 @@ struct buffer_pool {
     pthread_cond_t cnd;
 };
 
-typedef struct buffer buffer_t;
-
-struct buffer {
-    void *data;
-    int id;
-};
-
 int buffer_pool_init(buffer_pool_t* bp, size_t capacity, size_t buffer_size);
 
 void buffer_pool_term(buffer_pool_t *bp);
 
-buffer_t buffer_pool_get(buffer_pool_t *bp);
+void *buffer_pool_get(buffer_pool_t *bp);
 
-void buffer_pool_release(buffer_pool_t *bp, buffer_t buffer);
+void buffer_pool_release(buffer_pool_t *bp, void *buffer);

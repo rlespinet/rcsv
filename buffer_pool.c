@@ -72,10 +72,10 @@ void buffer_pool_term(buffer_pool_t *bp) {
 
 }
 
-buffer_t buffer_pool_get(buffer_pool_t *bp) {
+void* buffer_pool_get(buffer_pool_t *bp) {
 
     if (bp == NULL) {
-        return (buffer_t){NULL, -1};
+        return NULL;
     }
 
     pthread_mutex_lock(&bp->mtx);
@@ -88,10 +88,7 @@ buffer_t buffer_pool_get(buffer_pool_t *bp) {
 
     int id = bp->free_ids[bp->free_count];
 
-    buffer_t buffer = {
-        bp->data[id],
-        id
-    };
+    void *buffer = bp->data[id];
 
     pthread_mutex_unlock(&bp->mtx);
 
@@ -100,7 +97,11 @@ buffer_t buffer_pool_get(buffer_pool_t *bp) {
 
 }
 
-void buffer_pool_release(buffer_pool_t *bp, buffer_t buffer) {
+int get_buffer_id(buffer_pool_t *bp, void *buffer) {
+    return (buffer - bp->data[0]) / bp->buffer_size;
+}
+
+void buffer_pool_release(buffer_pool_t *bp, void *buffer) {
 
     if (bp == NULL) {
         return;
@@ -108,7 +109,7 @@ void buffer_pool_release(buffer_pool_t *bp, buffer_t buffer) {
 
     pthread_mutex_lock(&bp->mtx);
 
-    bp->free_ids[bp->free_count] = buffer.id;
+    bp->free_ids[bp->free_count] = get_buffer_id(bp, buffer);
 
     pthread_cond_signal(&bp->cnd);
 
