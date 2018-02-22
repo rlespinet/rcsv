@@ -9,7 +9,7 @@
 #include "rcsv.h"
 
 #include "buffer_pool.h"
-#include "thpool.h"
+#include "rthreadpool.h"
 
 #define BUFFER_SIZE (1L << 20)
 #define INIT_ALLOC  (1L << 16)
@@ -113,7 +113,7 @@ int rcsv_read(int *rows, int *cols, float **dest, const char *path) {
     /*     goto clean1; */
     /* } */
 
-    threadpool pool = thpool_init(NTHREADS - 1);
+    rthreadpool_t *pool = rthreadpool_init(NTHREADS - 1);
     if (pool == NULL) {
         goto clean2;
     }
@@ -156,7 +156,7 @@ int rcsv_read(int *rows, int *cols, float **dest, const char *path) {
 
         thread_arg_t arg = {&buff_pool, buffer, data + data_size};
 
-        int w = thpool_add_work(pool, rcsv_thread_process, (void*) &arg);
+        int w = rthreadpool_add_work(pool, rcsv_thread_process, (void*) &arg);
         if (w != 0) {
             goto clean4;
         }
@@ -168,7 +168,7 @@ int rcsv_read(int *rows, int *cols, float **dest, const char *path) {
 
     }
 
-    thpool_wait(pool);
+    rthreadpool_join(pool);
 
     *dest = data;
     *rows = 1;
@@ -181,7 +181,7 @@ int rcsv_read(int *rows, int *cols, float **dest, const char *path) {
 clean4:
     free(data);
 clean3:
-    thpool_destroy(pool);
+    rthreadpool_term(pool);
 clean2:
     buffer_pool_term(&buff_pool);
 clean1:

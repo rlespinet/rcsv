@@ -1,9 +1,9 @@
 CC=gcc
-CFLAGS=-Wall -O0 -g -I../C-Thread-Pool/
+CFLAGS=-Wall -O0 -g -I../rthreadpool/src
 LDFLAGS=-rdynamic -lpthread
 EXEC=main
 # SRC=$(wildcard *.c)
-SRC=main.c rcsv.c buffer_pool.c ../C-Thread-Pool/thpool.c
+SRC=main.c rcsv.c buffer_pool.c ../rthreadpool/src/rthreadpool.c
 OBJ=$(SRC:.c=.o)
 
 all: $(EXEC)
