@@ -21,3 +21,6 @@ void buffer_pool_term(buffer_pool_t *bp);
 void *buffer_pool_get(buffer_pool_t *bp);
 
 void buffer_pool_release(buffer_pool_t *bp, void *buffer);
+
+#define buffer_pool_init_t(bp, type, capacity, buffer_size) \
+    buffer_pool_init(bp, sizeof(type) * capacity, buffer_size)

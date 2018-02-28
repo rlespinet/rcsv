@@ -108,11 +108,6 @@ int rcsv_read(int *rows, int *cols, float **dest, const char *path) {
         goto clean1;
     }
 
-    /* char *buffer = malloc(sizeof(char) * BUFFER_SIZE); */
-    /* if (buffer == NULL) { */
-    /*     goto clean1; */
-    /* } */
-
     rthreadpool_t *pool = rthreadpool_init(NTHREADS - 1);
     if (pool == NULL) {
         goto clean2;

@@ -1,0 +1,3 @@
+[submodule "dependencies/rthreadpool"]
+	path = dependencies/rthreadpool
+	url = https://github.com/rlespinet/rthreadpool.git
