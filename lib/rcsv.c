@@ -4,11 +4,13 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <string.h>
+#include <pthread.h>
 #include <math.h>
 #include <fcntl.h>
 #include "rcsv.h"
 
 #include "buffer_pool.h"
+#include "blocking_queue.h"
 #include "rthreadpool.h"
 
 #define BUFFER_SIZE (1L << 20)
@@ -17,7 +19,7 @@
 // TODO(RL) Modify this!
 #define ALLOC  (1L << 32)
 
-#define NTHREADS 4
+#define NTHREADS_POOL 4
 #define BUFFER_POOL_SIZE 16
 
 typedef struct {
@@ -26,13 +28,15 @@ typedef struct {
     float *array;
 }  thread_arg_t;
 
-void rcsv_thread_process(void *v_arg) {
+void rcsv_thread_process(void *varg) {
 
-    thread_arg_t *arg = (thread_arg_t*) v_arg;
+    thread_arg_t *arg = (thread_arg_t*) varg;
 
     buffer_pool_t *buff_pool = arg->buff_pool;
     char* buffer = arg->buffer;
     float *array = arg->array;
+
+    free(varg);
 
     int array_id = 0;
 
@@ -46,8 +50,8 @@ void rcsv_thread_process(void *v_arg) {
 
         int read_something = (new_ptr - ptr) != 0;
 
-        while (*new_ptr && *new_ptr == ' ') {
-            (*new_ptr)++;
+        while (*new_ptr == ' ') {
+            new_ptr++;
         }
 
         if (*new_ptr && *new_ptr != ',' && *new_ptr != '\n') {
@@ -72,7 +76,6 @@ void rcsv_thread_process(void *v_arg) {
 
     buffer_pool_release(buff_pool, (void*) buffer);
 
-
 }
 
 char *search_backward(char *start, int size, char c) {
@@ -83,6 +86,15 @@ char *search_backward(char *start, int size, char c) {
     return ptr < start ? NULL : ptr;
 }
 
+char *search_nospace_backward(char *start, int size) {
+    char* ptr = start + size - 1;
+    while (ptr >= start && isspace(*ptr)) {
+        ptr--;
+    }
+    return ptr < start ? NULL : ptr;
+}
+
+
 int count_delim(const char *start, int size) {
 
     int count = 0;
@@ -91,6 +103,101 @@ int count_delim(const char *start, int size) {
             count++;
     }
     return count;
+}
+
+typedef struct {
+    buffer_pool_t *buff_pool;
+    blocking_queue_t *queue;
+}  dispatcher_arg_t;
+
+typedef struct {
+    float *data;
+    int rows;
+    int cols;
+}  dispatcher_return_t;
+
+void *dispatcher_thread_func(void *varg) {
+
+    dispatcher_arg_t *arg = (dispatcher_arg_t*) varg;
+
+    buffer_pool_t *buff_pool = arg->buff_pool;
+    blocking_queue_t *queue = arg->queue;
+
+    dispatcher_return_t *ret = NULL;
+
+    rthreadpool_t *pool = rthreadpool_init(NTHREADS_POOL);
+    if (pool == NULL) {
+        goto clean0;
+    }
+
+    float *data = (float*) malloc(sizeof(float) * ALLOC);
+    if (data == NULL) {
+        goto clean1;
+    }
+
+
+    int lines = 0;
+    int elements = 0;
+    for (;;) {
+        char *buffer = NULL;
+        int state = blocking_queue_pop(queue, (void*) &buffer);
+        if (state == 1) {
+            break;
+        }
+
+        int buffer_lines = 0;
+        int buffer_elements = 0;
+
+        const char* ptr = buffer;
+        for (;*ptr;ptr++) {
+            switch (*ptr) {
+            case '\n':
+                buffer_lines++;
+                // No break here
+            case ',':
+                buffer_elements++;
+                break;
+            }
+        }
+
+        thread_arg_t *arg = malloc(sizeof(thread_arg_t));
+        arg->buff_pool = buff_pool;
+        arg->buffer = buffer;
+        arg->array = data + elements;
+
+        int w = rthreadpool_add_work(pool, rcsv_thread_process, (void*) arg);
+        if (w != 0) {
+            goto clean2;
+        }
+
+        // TODO(RL) Verify that we do not need to add 1
+        elements += buffer_elements + 1;
+        lines += buffer_lines;
+
+    }
+
+    rthreadpool_join(pool);
+
+    lines += 1;
+
+    ret = (dispatcher_return_t *) malloc(sizeof(dispatcher_return_t));
+    if (ret == NULL) {
+        goto clean2;
+    }
+
+    ret->data = data;
+    ret->rows = lines;
+    ret->cols = elements / lines;
+
+    goto clean1;
+
+clean2:
+    free(data);
+    data = NULL;
+clean1:
+    rthreadpool_term(pool);
+clean0:
+    return ret;
 }
 
 int rcsv_read(int *rows, int *cols, float **dest, const char *path) {
@@ -108,75 +215,75 @@ int rcsv_read(int *rows, int *cols, float **dest, const char *path) {
         goto clean1;
     }
 
-    rthreadpool_t *pool = rthreadpool_init(NTHREADS - 1);
-    if (pool == NULL) {
+    blocking_queue_t *queue = blocking_queue_init();
+    if (queue == NULL) {
         goto clean2;
     }
 
-    size_t data_size = 0;
-    float *data = (float*) malloc(sizeof(float) * ALLOC);
-    if (data == NULL) {
+    dispatcher_arg_t dispatcher_arg = {
+        &buff_pool,
+        queue
+    };
+
+    pthread_t dispatcher_thread;
+    int state = pthread_create(&dispatcher_thread, NULL, dispatcher_thread_func, (void*) &dispatcher_arg);
+    if (state != 0) {
         goto clean3;
     }
 
     char *buffer = (char*) buffer_pool_get(&buff_pool);
-    size_t bytes_left = 0;
 
-    int finished = 0;
-    while (!finished) {
+    size_t bytes_left = 0;
+    int running = 1;
+    while (running) {
 
         ssize_t rd = read(fd, (void*) (buffer + bytes_left), BUFFER_SIZE - bytes_left);
         if (rd < 0) {
             goto clean4;
         }
 
-        char *next_buffer = NULL;
         char *split = NULL;
-        if (rd < BUFFER_SIZE - bytes_left) {
-            split = buffer + bytes_left + rd;
-            bytes_left = 0;
-            finished = 1;
-        } else {
+        char *next_buffer = NULL;
+        if (rd == BUFFER_SIZE - bytes_left) {
             split = search_backward(buffer, BUFFER_SIZE, ',');
-            bytes_left = buffer + BUFFER_SIZE - split + 1;
+            bytes_left = buffer + BUFFER_SIZE - split - 1;
             next_buffer = (char*) buffer_pool_get(&buff_pool);
             memcpy(next_buffer, buffer + BUFFER_SIZE - bytes_left, bytes_left);
-        }
-
-        if (split == NULL) {
-            goto clean4;
+        } else {
+            split = search_nospace_backward(buffer, bytes_left + rd) + 1;
+            bytes_left = 0;
+            running = 0;
         }
 
         *split = '\0';
 
-        thread_arg_t arg = {&buff_pool, buffer, data + data_size};
-
-        int w = rthreadpool_add_work(pool, rcsv_thread_process, (void*) &arg);
-        if (w != 0) {
-            goto clean4;
-        }
-
-        int delim = count_delim(buffer, split - buffer);
-        data_size += delim + 1;
+        blocking_queue_push(queue, buffer);
 
         buffer = next_buffer;
 
     }
 
-    rthreadpool_join(pool);
+    blocking_queue_push_terminate(queue);
 
-    *dest = data;
-    *rows = 1;
-    *cols = data_size;
+    dispatcher_return_t *array = NULL;
+    // TODO(RL) Handle pthread_join failure ?
+    state = pthread_join(dispatcher_thread, (void**) &array);
 
+    *dest = array->data;
+    *rows = array->rows;
+    *cols = array->cols;
+
+    free(array);
 
     ret = 0;
+
     goto clean3;
 
 clean4:
-    free(data);
+    pthread_cancel(dispatcher_thread);
+    pthread_join(dispatcher_thread, NULL);
 clean3:
-    rthreadpool_term(pool);
+    blocking_queue_term(queue);
 clean2:
     buffer_pool_term(&buff_pool);
 clean1:

@@ -11,6 +11,7 @@ module = Extension('rcsv',
                     library_dirs = [],
                     sources = ['python/rcsvmodule.c',
                                'dependencies/rthreadpool/src/rthreadpool.c',
+                               'lib/blocking_queue.c',
                                'lib/buffer_pool.c',
                                'lib/rcsv.c'])
 
