@@ -58,8 +58,24 @@ I use it to generate files with a size in the range of 500Ko to
 
 ![alt text](https://github.com/rlespinet/rcsv/blob/master/docs/imgs/benchmark2.png/ "Benchmark from 500Mo to 3.5Go")
 
+I've also profiled memory usage for the same libraries on a randomly
+generated csv that consists only of comma separated digits (between 0
+and 9) without space. The file takes 2Go on disk and 4Go in RAM once
+loaded. It has been generated with the following command
+
+    python csv_generator.py --float-range 0 9 --digits-range 0 0 --prefix-ws-range 0 0 \
+                            --suffix-ws-range 0 0 --formatting f 50000 20000
+
+The memory usage for each library is represented in the figures below.
+
+<img src="https://github.com/rlespinet/rcsv/blob/master/docs/imgs/memory_all.png" width="75%" title="Memory usage on a 2Go file">
+
+On my computer, there is a huge gain in using rcsv for this kind of
+file (it takes 30 and 10 min to load using numpy and panda vs 8
+seconds with rcsv). This is the reason why I developped this library
+in the first place.
 
 Please send me an email at remi@lespi.net if it fails to load your CSV
 and you think it shouldn't (especially if a simple np.loadtxt can load
-it) or if loading your CSV is slower with this program than with
+it) or if loading your CSV is slower with this library than with
 another one.
