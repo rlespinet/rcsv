@@ -4,7 +4,7 @@
 
 typedef struct blocking_queue blocking_queue_t;
 
-blocking_queue_t *blocking_queue_init();
+blocking_queue_t *blocking_queue_init(void);
 
 void blocking_queue_term(blocking_queue_t *queue);
 

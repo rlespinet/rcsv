@@ -244,7 +244,7 @@ int rcsv_read(int *rows, int *cols, float **dest, const char *path) {
 
         char *split = NULL;
         char *next_buffer = NULL;
-        if (rd == BUFFER_SIZE - bytes_left) {
+        if ((size_t) rd == BUFFER_SIZE - bytes_left) {
             split = search_backward(buffer, BUFFER_SIZE, ',');
             bytes_left = buffer + BUFFER_SIZE - split - 1;
             next_buffer = (char*) buffer_pool_get(&buff_pool);

@@ -24,7 +24,7 @@ int buffer_pool_init(buffer_pool_t* bp, size_t capacity, size_t buffer_size) {
         goto err1;
     }
 
-    for (int i = 1; i < capacity; i++) {
+    for (size_t i = 1; i < capacity; i++) {
         bp->data[i] = BUFFER_OFFSET(bp->data[0], i * buffer_size);
     }
 
@@ -33,7 +33,7 @@ int buffer_pool_init(buffer_pool_t* bp, size_t capacity, size_t buffer_size) {
         goto err2;
     }
 
-    for (int i = 0; i < capacity; i++) {
+    for (size_t i = 0; i < capacity; i++) {
         bp->free_ids[i] = i;
     }
 
