@@ -32,6 +32,28 @@ PyMODINIT_FUNC PyInit_rcsv(void) {
     return PyModule_Create(&rcsv_module);
 }
 
+static void set_python_error(int code) {
+    switch (code) {
+    case ERR_OUT_OF_MEMORY:
+        PyErr_SetString(PyExc_ValueError,
+                        "Out Of Memory. Please buy more RAM.");
+        break;
+    case ERR_INTERNAL_ERROR:
+        PyErr_SetString(PyExc_ValueError,
+                        "Internal error. Please contact the author of this program.");
+        break;
+    case ERR_PTHREAD_ERROR:
+        PyErr_SetString(PyExc_ValueError,
+                        "Pthread error. Please contact the author of this program.");
+        break;
+    case ERR_FILE_ERROR:
+        PyErr_SetString(PyExc_ValueError,
+                        "File error. Failed to open the file, make sure that the path is right "
+                        "and that you have read access.");
+        break;
+    }
+}
+
 static PyObject *rcsv_read_bind(PyObject *self, PyObject *args) {
     const char *path;
     PyObject* array = NULL;
@@ -42,10 +64,10 @@ static PyObject *rcsv_read_bind(PyObject *self, PyObject *args) {
 
     float *data = NULL;
     int rows = 0, cols = 0;
-    int ret = rcsv_read(&rows, &cols, &data, path);
-    if (ret != 0) {
-        // TODO(RL) Handle error
-        free(data);
+    int code = rcsv_read(&rows, &cols, &data, path);
+    if (code != SUCCESS) {
+        set_python_error(code);
+        Py_RETURN_NONE;
     }
 
     npy_intp dims[] = {rows, cols};

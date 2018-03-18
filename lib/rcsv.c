@@ -111,6 +111,7 @@ typedef struct {
 }  dispatcher_arg_t;
 
 typedef struct {
+    int code;
     float *data;
     int rows;
     int cols;
@@ -124,17 +125,22 @@ void *dispatcher_thread_func(void *varg) {
     blocking_queue_t *queue = arg->queue;
 
     dispatcher_return_t *ret = NULL;
+    ret = (dispatcher_return_t *) malloc(sizeof(dispatcher_return_t));
+    if (ret == NULL) {
+        goto clean0;
+    }
 
     rthreadpool_t *pool = rthreadpool_init(NTHREADS_POOL);
     if (pool == NULL) {
+        ret->code = ERR_INTERNAL_ERROR;
         goto clean0;
     }
 
     float *data = (float*) malloc(sizeof(float) * ALLOC);
     if (data == NULL) {
+        ret->code = ERR_OUT_OF_MEMORY;
         goto clean1;
     }
-
 
     int lines = 0;
     int elements = 0;
@@ -167,6 +173,7 @@ void *dispatcher_thread_func(void *varg) {
 
         int w = rthreadpool_add_work(pool, rcsv_thread_process, (void*) arg);
         if (w != 0) {
+            ret->code = ERR_INTERNAL_ERROR;
             goto clean2;
         }
 
@@ -180,11 +187,7 @@ void *dispatcher_thread_func(void *varg) {
 
     lines += 1;
 
-    ret = (dispatcher_return_t *) malloc(sizeof(dispatcher_return_t));
-    if (ret == NULL) {
-        goto clean2;
-    }
-
+    ret->code = SUCCESS;
     ret->data = data;
     ret->rows = lines;
     ret->cols = elements / lines;
@@ -202,21 +205,24 @@ clean0:
 
 int rcsv_read(int *rows, int *cols, float **dest, const char *path) {
 
-    int ret = -1;
+    int code = SUCCESS;
 
     int fd = open(path, O_RDONLY);
     if (fd < 0) {
+        code = ERR_FILE_ERROR;
         goto clean0;
     }
 
     buffer_pool_t buff_pool;
     int res = buffer_pool_init(&buff_pool, BUFFER_POOL_SIZE, sizeof(char) * BUFFER_SIZE);
     if (res != 0) {
+        code = ERR_INTERNAL_ERROR;
         goto clean1;
     }
 
     blocking_queue_t *queue = blocking_queue_init();
     if (queue == NULL) {
+        code = ERR_INTERNAL_ERROR;
         goto clean2;
     }
 
@@ -228,6 +234,7 @@ int rcsv_read(int *rows, int *cols, float **dest, const char *path) {
     pthread_t dispatcher_thread;
     int state = pthread_create(&dispatcher_thread, NULL, dispatcher_thread_func, (void*) &dispatcher_arg);
     if (state != 0) {
+        code = ERR_PTHREAD_ERROR;
         goto clean3;
     }
 
@@ -239,7 +246,10 @@ int rcsv_read(int *rows, int *cols, float **dest, const char *path) {
 
         ssize_t rd = read(fd, (void*) (buffer + bytes_left), BUFFER_SIZE - bytes_left);
         if (rd < 0) {
-            goto clean4;
+            // TODO(RL) handle this error better (involves canceling
+            // the dispatcher thread)
+            code = ERR_INTERNAL_ERROR;
+            break;
         }
 
         char *split = NULL;
@@ -267,21 +277,21 @@ int rcsv_read(int *rows, int *cols, float **dest, const char *path) {
 
     dispatcher_return_t *array = NULL;
     // TODO(RL) Handle pthread_join failure ?
-    state = pthread_join(dispatcher_thread, (void**) &array);
+    pthread_join(dispatcher_thread, (void**) &array);
+    if (array == NULL) {
+        code = ERR_OUT_OF_MEMORY;
+        goto clean3;
+    } else if (array->code != SUCCESS) {
+        code = array->code;
+        goto clean4;
+    }
 
     *dest = array->data;
     *rows = array->rows;
     *cols = array->cols;
 
-    free(array);
-
-    ret = 0;
-
-    goto clean3;
-
 clean4:
-    pthread_cancel(dispatcher_thread);
-    pthread_join(dispatcher_thread, NULL);
+    free(array);
 clean3:
     blocking_queue_term(queue);
 clean2:
@@ -289,6 +299,6 @@ clean2:
 clean1:
     close(fd);
 clean0:
-    return ret;
+    return code;
 
 }
